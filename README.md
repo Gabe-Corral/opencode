@@ -1,3 +1,13 @@
+# OpenCode — Personal Fork
+
+This repository is my personal fork of [OpenCode](https://github.com/anomalyco/opencode). This fork is purely for my own personal experimentation.
+
+## Custom Features
+
+- Review proposed edits in Neovim before approving them. Press e for a syntax-highlighted side-by-side view or u for a unified diff.
+
+**This is NOT officially affiliated with or supported by the OpenCode maintainers.**
+
 <p align="center">
   <a href="https://opencode.ai">
     <picture>

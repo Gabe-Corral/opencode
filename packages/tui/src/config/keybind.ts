@@ -88,6 +88,8 @@ export const Definitions = {
   "diff.toggle_fullscreen": keybind("f", "Toggle diff viewer full screen"),
   "diff.mark_reviewed": keybind("m", "Toggle selected diff file reviewed"),
   "diff.help": keybind("?,shift+?,shift+/", "Show more diff viewer shortcuts"),
+  "permission.prompt.editor": keybind("e", "Review proposed edit side by side in external editor"),
+  "permission.prompt.diff": keybind("u", "Review proposed edit as a unified diff in external editor"),
 
   "prompt.editor": keybind("<leader>e", "Open external editor"),
   "theme.switch": keybind("none", "List available themes"),

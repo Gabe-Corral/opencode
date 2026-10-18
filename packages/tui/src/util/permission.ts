@@ -1,4 +1,6 @@
 import { Locale } from "./locale"
+import { FileDiff } from "@opencode/schema/file-diff"
+import { Option, Schema } from "effect"
 import { canonicalToolName, finiteNumber, webSearchProviderLabel } from "./tool-display"
 
 type Dict = Record<string, unknown>
@@ -18,6 +20,51 @@ export type PermissionPresentationInput = {
   metadata?: unknown
   input?: unknown
   toolMetadata?: unknown
+}
+
+export function permissionReviewDiff(metadata?: Record<string, unknown>) {
+  const files = Schema.decodeUnknownOption(Schema.Array(FileDiff.Info))(metadata?.files)
+  if (Option.isNone(files) || files.value.length === 0) return
+  return {
+    text: files.value.map((file) => file.patch.trimEnd()).join("\n\n") + "\n",
+    files: files.value,
+  }
+}
+
+export async function permissionReviewSides(files: readonly FileDiff.Info[]) {
+  const { parsePatch } = await import("diff")
+  try {
+    return files
+      .map((file) => {
+        const patches = parsePatch(file.patch)
+        const patch = patches[0]
+        if (patches.length !== 1 || !patch || patch.hunks.length === 0) return
+        return {
+          file: file.file,
+          before:
+            patch.hunks
+              .map((hunk) =>
+                hunk.lines
+                  .filter((line) => line.startsWith(" ") || line.startsWith("-"))
+                  .map((line) => line.slice(1))
+                  .join("\n"),
+              )
+              .join("\n") + "\n",
+          after:
+            patch.hunks
+              .map((hunk) =>
+                hunk.lines
+                  .filter((line) => line.startsWith(" ") || line.startsWith("+"))
+                  .map((line) => line.slice(1))
+                  .join("\n"),
+              )
+              .join("\n") + "\n",
+        }
+      })
+      .filter((file): file is { file: string; before: string; after: string } => file !== undefined)
+  } catch {
+    return []
+  }
 }
 
 export function permissionPresentation(

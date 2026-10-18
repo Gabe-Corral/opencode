@@ -7,7 +7,13 @@ import type { PermissionReply, PermissionRequest } from "@opencode/client"
 import { SplitBorder } from "../../ui/border"
 import { useData } from "../../context/data"
 import { filetype } from "../../util/filetype"
-import { permissionAlwaysLines, permissionOptionLabel, permissionPresentation } from "../../util/permission"
+import {
+  permissionAlwaysLines,
+  permissionOptionLabel,
+  permissionPresentation,
+  permissionReviewDiff,
+  permissionReviewSides,
+} from "../../util/permission"
 import { getScrollAcceleration } from "../../util/scroll"
 import { useConfig } from "../../config"
 import { Keymap } from "../../context/keymap"
@@ -16,6 +22,7 @@ import { usePathFormatter } from "../../context/path-format"
 import { SimulationSemantics } from "../../simulation/semantics"
 import { PatchDiff } from "../../component/patch-diff"
 import { useToast } from "../../ui/toast"
+import { openEditor } from "../../editor"
 
 type PermissionStage = "permission" | "reject"
 
@@ -113,11 +120,15 @@ function EditBody(props: { file?: string; diff?: string; patch?: string }) {
 export function PermissionPrompt(props: { request: PermissionRequest; directory?: string }) {
   const data = useData()
   const toast = useToast()
+  const renderer = useRenderer()
   const [store, setStore] = createStore({
     stage: "permission" as PermissionStage,
   })
   const pathFormatter = usePathFormatter()
   const session = createMemo(() => data.session.get(props.request.sessionID))
+  const reviewDiff = createMemo(() =>
+    props.request.action === "edit" ? permissionReviewDiff(props.request.metadata) : undefined,
+  )
 
   const source = createMemo(() => {
     const tool = props.request.source
@@ -137,6 +148,20 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
     void data.session.permission
       .reply({ sessionID: props.request.sessionID, requestID: props.request.id, decision: value, message })
       .catch((error: unknown) => toast.error(error))
+  }
+
+  function review(mode: "split" | "unified") {
+    const proposed = reviewDiff()
+    if (!proposed) return
+    void (async () => {
+      const sides = mode === "split" ? await permissionReviewSides(proposed.files) : []
+      await openEditor({
+        renderer,
+        value: proposed.text,
+        cwd: session()?.location.directory ?? props.directory,
+        review: { sides: sides.length === proposed.files.length ? sides : [] },
+      })
+    })().catch((error: unknown) => toast.error(error))
   }
 
   return (
@@ -240,6 +265,8 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               }
               escapeKey="reject"
               fullscreen
+              onReview={reviewDiff() ? () => review("split") : undefined}
+              onReviewDiff={reviewDiff() ? () => review("unified") : undefined}
               onSelect={(option) => {
                 if (option === "always") {
                   reply("always")
@@ -416,6 +443,8 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
   options: T
   escapeKey?: keyof T
   fullscreen?: boolean
+  onReview?: () => void
+  onReviewDiff?: () => void
   onSelect: (option: keyof T) => void
 }) {
   const theme = useTheme()
@@ -462,6 +491,28 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
             },
           ]
         : []),
+      ...(props.onReview
+        ? [
+            {
+              id: "permission.prompt.editor",
+              title: "Review proposed edit side by side in external editor",
+              group: group(),
+              bind: false as const,
+              run: props.onReview,
+            },
+          ]
+        : []),
+      ...(props.onReviewDiff
+        ? [
+            {
+              id: "permission.prompt.diff",
+              title: "Review proposed edit as a unified diff in external editor",
+              group: group(),
+              bind: false as const,
+              run: props.onReviewDiff,
+            },
+          ]
+        : []),
       ...(keys.length > 1
         ? [
             {
@@ -492,7 +543,12 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
       },
       ...(props.escapeKey ? [{ bind: "escape", title: "Reject permission", group: group(), run: dismiss }] : []),
     ],
-    bindings: [...(props.escapeKey ? ["app.exit"] : []), ...(props.fullscreen ? ["permission.prompt.fullscreen"] : [])],
+    bindings: [
+      ...(props.escapeKey ? ["app.exit"] : []),
+      ...(props.fullscreen ? ["permission.prompt.fullscreen"] : []),
+      ...(props.onReview ? ["permission.prompt.editor"] : []),
+      ...(props.onReviewDiff ? ["permission.prompt.diff"] : []),
+    ],
   }))
 
   const hint = createMemo(() => (store.expanded ? "minimize" : "fullscreen"))
@@ -595,7 +651,24 @@ export function SessionQuestion<const T extends Record<string, string>>(props: {
             )}
           </For>
         </box>
-        <box flexDirection="row" gap={2} flexShrink={0}>
+        <box
+          flexDirection="row"
+          flexWrap="wrap"
+          gap={2}
+          rowGap={1}
+          width={narrow() ? "100%" : undefined}
+          flexShrink={0}
+        >
+          <Show when={props.onReview}>
+            <text fg={theme.text.base}>
+              {shortcuts.get("permission.prompt.editor")} <span style={{ fg: theme.text.muted }}>side by side</span>
+            </text>
+          </Show>
+          <Show when={props.onReviewDiff}>
+            <text fg={theme.text.base}>
+              {shortcuts.get("permission.prompt.diff")} <span style={{ fg: theme.text.muted }}>unified diff</span>
+            </text>
+          </Show>
           <Show when={props.fullscreen}>
             <text fg={theme.text.base}>
               {shortcuts.get("permission.prompt.fullscreen")} <span style={{ fg: theme.text.muted }}>{hint()}</span>
